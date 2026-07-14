@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sdlc-harness"
+version = "0.2.0"
+description = "A generalized, provider-agnostic SDLC harness that drives any project through Requirements -> PRD -> TRD -> Implementation -> Testing with stage gates."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []  # core is standard-library only (urllib/json/subprocess)
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+# Installs a global `sdlc` command -> `sdlc <target-folder>`
+sdlc = "sdlc_harness.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["sdlc_harness*"]
+
+[tool.setuptools.package-data]
+sdlc_harness = ["prompts/*.md"]

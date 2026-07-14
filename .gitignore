@@ -1,0 +1,21 @@
+# Secrets / local config — never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual envs
+.venv*/
+venv/
+
+# Test caches
+.pytest_cache/
+
+# Editor
+.idea/
+.vscode/
