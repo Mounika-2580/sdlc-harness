@@ -32,7 +32,13 @@ After this you have a global `sdlc` command (while the `.venv` is active).
 
 ---
 
-## 3. Choose your AI (once)
+## 3. Choose your AI (usually automatic)
+**Zero-config:** the harness auto-detects an AI, so most people don't set anything:
+- If a local **Ollama** server is running → it uses that (free, no key).
+- If a cloud key is already in your environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+  `OPENROUTER_API_KEY`) → it uses that automatically.
+
+Only if it finds nothing will it stop and tell you how to add one. To set it explicitly:
 ```powershell
 Copy-Item .env.example .env      # macOS/Linux: cp .env.example .env
 ```

@@ -1,14 +1,16 @@
 """Central configuration for the generalized SDLC harness.
 
-Everything tunable lives here: which LLM provider to use, the manifest->ecosystem
-detection map, artifact locations, and safety/robustness limits. Nothing in this file
-is tied to a specific programming language or a specific project.
+Everything tunable lives here. The harness is **zero-config by default**: if you don't
+set LLM_PROVIDER, it auto-detects an available AI (a known API key in your environment,
+or a local Ollama server). You only ever *have* to configure something if no AI can be
+found at all.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+import socket
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -24,19 +26,15 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
-# Load a .env from the current working directory or the repo root, if present.
 for _candidate in (Path.cwd() / ".env", Path(__file__).resolve().parent.parent / ".env"):
     _load_dotenv(_candidate)
 
 
-# Per-provider default endpoints/models; every value is overridable by env vars so the
-# same code path serves cloud APIs and local models.
 _DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "ollama": "http://127.0.0.1:11434",
-    "anthropic": "",  # SDK manages the endpoint
+    "anthropic": "",
 }
-
 _DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
     "ollama": "llama3.2",
@@ -46,48 +44,98 @@ _DEFAULT_MODELS = {
 
 @dataclass
 class LLMConfig:
-    """Resolved LLM settings. Provider is chosen purely from config/env."""
+    """Resolved LLM settings. Fields left blank are filled with provider defaults."""
 
-    provider: str = field(default_factory=lambda: os.environ.get("LLM_PROVIDER", "ollama").lower())
+    provider: str = ""
     model: str = ""
-    api_key: str = field(default_factory=lambda: os.environ.get("LLM_API_KEY", ""))
+    api_key: str = ""
     base_url: str = ""
-    max_tokens: int = field(default_factory=lambda: int(os.environ.get("LLM_MAX_TOKENS", "4096")))
-    temperature: float = field(default_factory=lambda: float(os.environ.get("LLM_TEMPERATURE", "0.2")))
-    timeout: int = field(default_factory=lambda: int(os.environ.get("LLM_TIMEOUT", "180")))
+    max_tokens: int = 4096
+    temperature: float = 0.2
+    timeout: int = 180
+    autodetected: bool = False
 
     def __post_init__(self) -> None:
-        self.model = self.model or os.environ.get("LLM_MODEL", "") or _DEFAULT_MODELS.get(self.provider, "")
-        self.base_url = (
-            self.base_url
-            or os.environ.get("LLM_BASE_URL", "")
-            or _DEFAULT_BASE_URLS.get(self.provider, "")
-        )
+        self.provider = (self.provider or "ollama").lower()
+        self.model = self.model or _DEFAULT_MODELS.get(self.provider, "")
+        self.base_url = self.base_url or _DEFAULT_BASE_URLS.get(self.provider, "")
+
+
+def _reachable(host: str, port: int, timeout: float = 0.4) -> bool:
+    """Cheaply check whether a local service (e.g. Ollama) is listening."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _autodetect() -> tuple[str, str, str]:
+    """Guess (provider, api_key, base_url) from the environment. Zero-config path.
+
+    Priority: an explicit cloud key already in the environment, then a running local
+    Ollama, then Ollama as the fallback default (errors clearly if not running).
+    """
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic", os.environ["ANTHROPIC_API_KEY"], ""
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai", os.environ["OPENAI_API_KEY"], ""
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return "openai", os.environ["OPENROUTER_API_KEY"], "https://openrouter.ai/api/v1"
+    # Local, no key.
+    return "ollama", "", ""
+
+
+def _key_from_env(provider: str) -> str:
+    if provider == "anthropic":
+        return os.environ.get("ANTHROPIC_API_KEY", "")
+    if provider == "openai":
+        return os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENROUTER_API_KEY", "")
+    return ""
 
 
 def load_llm_config() -> LLMConfig:
-    """Build the LLM configuration from environment variables."""
-    return LLMConfig()
+    """Build config from env, auto-detecting the provider when not set explicitly."""
+    provider = os.environ.get("LLM_PROVIDER", "").lower()
+    api_key = os.environ.get("LLM_API_KEY", "")
+    base_url = os.environ.get("LLM_BASE_URL", "")
+    autodetected = False
+
+    if not provider:
+        provider, det_key, det_base = _autodetect()
+        api_key = api_key or det_key
+        base_url = base_url or det_base
+        autodetected = True
+    elif not api_key:
+        api_key = _key_from_env(provider)
+
+    return LLMConfig(
+        provider=provider,
+        model=os.environ.get("LLM_MODEL", ""),
+        api_key=api_key,
+        base_url=base_url,
+        max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "4096")),
+        temperature=float(os.environ.get("LLM_TEMPERATURE", "0.2")),
+        timeout=int(os.environ.get("LLM_TIMEOUT", "180")),
+        autodetected=autodetected,
+    )
+
+
+def ollama_running() -> bool:
+    """True if a local Ollama server appears to be listening (for a friendly hint)."""
+    return _reachable("127.0.0.1", 11434)
 
 
 # --- Artifacts & limits -------------------------------------------------------
 
-ARTIFACT_DIR = "docs/sdlc"          # relative to the target project folder
-LOG_FILE = ".harness-log.jsonl"     # per-call LLM log, inside ARTIFACT_DIR
-STATE_FILE = ".sdlc-state.json"     # resume state, inside ARTIFACT_DIR
-BACKUP_DIR = ".backups"             # overwritten-file snapshots, inside ARTIFACT_DIR
+ARTIFACT_DIR = "docs/sdlc"
+LOG_FILE = ".harness-log.jsonl"
+STATE_FILE = ".sdlc-state.json"
+BACKUP_DIR = ".backups"
 
-# Max seconds a test/build command may run before the harness kills it.
 TEST_COMMAND_TIMEOUT = int(os.environ.get("TEST_TIMEOUT", "300"))
-
-# How many times to auto-repair failing tests (feed the error back and retry).
 REPAIR_ATTEMPTS = int(os.environ.get("REPAIR_ATTEMPTS", "2"))
-
-# How many times to re-ask the model for valid JSON when parsing fails.
 JSON_RETRY_ATTEMPTS = int(os.environ.get("JSON_RETRY_ATTEMPTS", "1"))
-
-# Cap for each prior-stage document injected into a prompt (protects the model's
-# context window on large brownfield repos). Truncation is announced in the prompt.
 MAX_DOC_CHARS = int(os.environ.get("MAX_DOC_CHARS", "8000"))
 
 

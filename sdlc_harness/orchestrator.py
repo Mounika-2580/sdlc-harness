@@ -67,7 +67,8 @@ class Orchestrator:
 
         print("\n=== SDLC Harness ===")
         print(f"Target : {self.root}")
-        print(f"Model  : {self.llm.label} via '{self.cfg.provider}'"
+        how = "auto-detected" if self.cfg.autodetected else "configured"
+        print(f"Model  : {self.llm.label} via '{self.cfg.provider}' ({how})"
               + ("  [DRY-RUN: no files written]" if self.dry_run else ""))
         print(f"Detected project type: {self.ctx.type.upper()}")
         if self.ctx.type == "brownfield" and self.ctx.ecosystems:

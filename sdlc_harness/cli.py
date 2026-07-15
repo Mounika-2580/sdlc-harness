@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-from .config import load_llm_config
+from .config import load_llm_config, ollama_running
 from .orchestrator import Orchestrator
 from .stages import STAGES
 
@@ -43,8 +43,16 @@ def main(argv: list[str]) -> int:
         os.environ["LLM_MODEL"] = args.model
 
     cfg = load_llm_config()
-    if not cfg.model:
-        print("Error: no model configured. Set LLM_MODEL or use --model.", file=sys.stderr)
+    # Zero-config friendliness: if we fell back to local Ollama but nothing is running
+    # and no cloud key is set, tell the user exactly how to provide an AI.
+    if cfg.autodetected and cfg.provider == "ollama" and not ollama_running():
+        print(
+            "No AI was detected. Give the harness a model in one of these ways:\n"
+            "  - Local (free):  install Ollama, then `ollama pull llama3.2` (auto-used), or\n"
+            "  - Cloud:         set ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY,\n"
+            "                   or edit .env (LLM_PROVIDER, LLM_MODEL, LLM_API_KEY).",
+            file=sys.stderr,
+        )
         return 2
 
     orch = Orchestrator(target, cfg, auto_yes=args.yes, dry_run=args.dry_run)
