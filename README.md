@@ -47,6 +47,8 @@ may proceed*:
 - **Resume + logging.** Progress in `docs/sdlc/.sdlc-state.json`; every LLM call logged with
   tokens/timing to `docs/sdlc/.harness-log.jsonl`.
 
+> **New here? Read [GETTING_STARTED.md](GETTING_STARTED.md)** for a step-by-step setup + usage guide.
+
 ## Install (recommended — git repo → CLI)
 ```powershell
 git clone <repo-url> sdlc-harness
